@@ -40,6 +40,9 @@ class DownloadRepository @Inject constructor(
     suspend fun resetSegments(downloadId: Long, segments: List<SegmentEntity>) =
         dao.resetSegments(downloadId, segments)
 
+    suspend fun getByStatusOrdered(status: DownloadStatus, limit: Int): List<DownloadEntity> =
+        dao.getByStatusOrdered(status, limit)
+
     suspend fun activeDownloads(): List<DownloadEntity> = dao.getByStatus(
         listOf(DownloadStatus.QUEUED, DownloadStatus.CONNECTING, DownloadStatus.RUNNING)
     )

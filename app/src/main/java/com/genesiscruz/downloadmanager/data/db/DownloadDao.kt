@@ -23,6 +23,9 @@ interface DownloadDao {
     @Query("SELECT * FROM downloads WHERE status IN (:statuses)")
     suspend fun getByStatus(statuses: List<DownloadStatus>): List<DownloadEntity>
 
+    @Query("SELECT * FROM downloads WHERE status = :status ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun getByStatusOrdered(status: DownloadStatus, limit: Int): List<DownloadEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(download: DownloadEntity): Long
 
