@@ -3,4 +3,9 @@
     <string name="app_name">Download Manager</string>
     <string name="notification_channel_downloads">Active downloads</string>
     <string name="notification_channel_completed">Completed downloads</string>
+
+    <plurals name="active_downloads_count">
+        <item quantity="one">%d active download</item>
+        <item quantity="other">%d active downloads</item>
+    </plurals>
 </resources>
