@@ -71,6 +71,28 @@ private class RangeDispatcher(
     }
 }
 
+/**
+ * Reproduces hosts that advertise range support on HEAD (`Accept-Ranges: bytes`
+ * + `Content-Length`) but never actually honor `Range` on GET, always
+ * returning the full body with `200`. This is the exact shape of the bug seen
+ * in the field: probe() must not be fooled by the HEAD hint, and a fresh
+ * segment download must still complete instead of failing.
+ */
+private class FalseAdvertisingDispatcher(private val content: ByteArray) : Dispatcher() {
+
+    override fun dispatch(request: RecordedRequest): MockResponse {
+        if (request.method == "HEAD") {
+            return MockResponse()
+                .setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", content.size.toString())
+        }
+        // Ignores any Range header entirely, exactly like a misconfigured
+        // proxy/CDN or a redirecting host that drops the header.
+        return MockResponse().setResponseCode(200).setBody(Buffer().write(content))
+    }
+}
+
 class DownloadTaskTest {
 
     @get:Rule
@@ -232,5 +254,37 @@ class DownloadTaskTest {
         assertTrue(probe.supportsRanges)
         assertEquals("\"v1\"", probe.etag)
         assertEquals("file.bin", probe.fileName)
+    }
+
+    @Test
+    fun `probe does not trust HEAD's Accept-Ranges hint alone`() = runTest {
+        val data = content(1024)
+        server.dispatcher = FalseAdvertisingDispatcher(data)
+        server.start()
+
+        val task = DownloadTask(client, repo)
+        val probe = task.probe(server.url("/file.bin").toString())
+
+        assertFalse(
+            "HEAD advertising Accept-Ranges must not be trusted without a real 206",
+            probe.supportsRanges
+        )
+        assertEquals(1024L, probe.totalBytes)
+    }
+
+    @Test
+    fun `host advertising ranges it doesn't honor still completes the download`() = runTest {
+        val data = content(2 * 1024 * 1024)
+        server.dispatcher = FalseAdvertisingDispatcher(data)
+        server.start()
+
+        val download = newDownload(server.url("/file.bin").toString())
+        val task = DownloadTask(client, repo, progressFlushMillis = 50)
+        val result = withContext(Dispatchers.Default) { task.run(download, requestedSegments = 8) }
+
+        assertArrayEquals(data, File(result.tempFilePath).readBytes())
+        assertEquals(data.size.toLong(), result.totalBytes)
+        assertFalse(result.supportsRanges)
+        assertEquals(1, repo.getSegments(download.id).size)
     }
 }

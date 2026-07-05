@@ -182,33 +182,23 @@ class DownloadTask(
     }
 
     /**
-     * Learns size, range support, validator, and filename. Tries HEAD first,
-     * falls back to a 1-byte ranged GET which also detects range support.
+     * Learns size, range support, validator, and filename. `Accept-Ranges` on a
+     * HEAD response is only a hint — some hosts advertise it but don't actually
+     * honor `Range` on GET (or redirect somewhere that doesn't). So range
+     * support is only ever trusted when a real ranged GET comes back `206`;
+     * HEAD is used solely as a cheap Content-Length/filename fallback when the
+     * GET response doesn't carry them.
      */
     suspend fun probe(url: String): ProbeResult = withContext(Dispatchers.IO) {
         val head = runCatching {
             client.newCall(Request.Builder().url(url).head().build()).execute()
         }.getOrNull()
+        val headLength = head?.takeIf { it.isSuccessful }
+            ?.header("Content-Length")?.toLongOrNull()
+        val headFileName = head?.takeIf { it.isSuccessful }?.let { fileNameFrom(it, url) }
+        val headMimeType = head?.takeIf { it.isSuccessful }?.header("Content-Type")
+        head?.close()
 
-        head?.use { response ->
-            if (response.isSuccessful) {
-                val length = response.header("Content-Length")?.toLongOrNull() ?: -1
-                val acceptRanges = response.header("Accept-Ranges")
-                    ?.contains("bytes", ignoreCase = true) == true
-                if (length > 0 && acceptRanges) {
-                    return@withContext ProbeResult(
-                        totalBytes = length,
-                        supportsRanges = true,
-                        etag = validator(response),
-                        mimeType = response.header("Content-Type"),
-                        fileName = fileNameFrom(response, url)
-                    )
-                }
-            }
-        }
-
-        // Ranged GET: a 206 answer proves range support even when HEAD is
-        // unsupported or Accept-Ranges is missing.
         val request = Request.Builder().url(url).header("Range", "bytes=0-0").build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful && response.code != 206) {
@@ -217,18 +207,18 @@ class DownloadTask(
             val partial = response.code == 206
             val total = if (partial) {
                 // Content-Range: bytes 0-0/12345
-                response.header("Content-Range")
-                    ?.substringAfterLast('/')?.toLongOrNull() ?: -1
+                response.header("Content-Range")?.substringAfterLast('/')?.toLongOrNull()
+                    ?: headLength ?: -1
             } else {
-                response.header("Content-Length")?.toLongOrNull() ?: -1
+                response.header("Content-Length")?.toLongOrNull() ?: headLength ?: -1
             }
             response.body?.close()
             ProbeResult(
                 totalBytes = total,
                 supportsRanges = partial,
                 etag = validator(response),
-                mimeType = response.header("Content-Type"),
-                fileName = fileNameFrom(response, url)
+                mimeType = response.header("Content-Type") ?: headMimeType,
+                fileName = fileNameFrom(response, url) ?: headFileName
             )
         }
     }
