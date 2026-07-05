@@ -30,12 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.genesiscruz.downloadmanager.data.db.DownloadStatus
 import com.genesiscruz.downloadmanager.service.SystemDownload
+import com.genesiscruz.downloadmanager.util.FileOpener
 import com.genesiscruz.downloadmanager.util.Formatters
 
 private val TABS = listOf("All", "Active", "Done", "System")
@@ -49,6 +51,7 @@ fun DownloadListScreen(
     viewModel: DownloadListViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -107,6 +110,7 @@ fun DownloadListScreen(
                                     onResume = { viewModel.resume(download.id) },
                                     onRetry = { viewModel.retry(download.id) },
                                     onCancel = { viewModel.cancel(download.id) },
+                                    onOpen = { FileOpener.open(context, download) },
                                     onDelete = { viewModel.delete(download) }
                                 )
                             }

@@ -1,6 +1,5 @@
 package com.genesiscruz.downloadmanager.ui.detail
 
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,12 +24,12 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.core.net.toUri
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.genesiscruz.downloadmanager.data.db.DownloadStatus
+import com.genesiscruz.downloadmanager.util.FileOpener
 import com.genesiscruz.downloadmanager.util.Formatters
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,17 +109,10 @@ fun DownloadDetailScreen(
                     DownloadStatus.PAUSED, DownloadStatus.FAILED ->
                         Button(onClick = viewModel::resume) { Text("Resume") }
                     DownloadStatus.COMPLETED -> {
-                        download.finalUri?.let { uri ->
-                            Button(onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(
-                                        uri.toUri(),
-                                        download.mimeType ?: "*/*"
-                                    )
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                runCatching { context.startActivity(intent) }
-                            }) { Text("Open") }
+                        if (download.finalUri != null) {
+                            Button(onClick = { FileOpener.open(context, download) }) {
+                                Text("Open")
+                            }
                         }
                     }
                     else -> {}

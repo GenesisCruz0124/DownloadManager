@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Legacy (API 26-28) completed downloads live in the public Downloads
+         folder; FileProvider exposes them as content:// URIs for opening. -->
+    <external-path name="downloads" path="Download/" />
+</paths>

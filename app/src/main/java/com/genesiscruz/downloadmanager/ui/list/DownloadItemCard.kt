@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -37,6 +38,7 @@ fun DownloadItemCard(
     onResume: () -> Unit,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -81,7 +83,15 @@ fun DownloadItemCard(
                             Icon(Icons.Filled.Delete, contentDescription = "Delete")
                         }
                     }
-                    DownloadStatus.COMPLETED, DownloadStatus.CANCELLED -> {
+                    DownloadStatus.COMPLETED -> {
+                        IconButton(onClick = onOpen) {
+                            Icon(Icons.Filled.OpenInNew, contentDescription = "Open")
+                        }
+                        IconButton(onClick = onDelete) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                        }
+                    }
+                    DownloadStatus.CANCELLED -> {
                         IconButton(onClick = onDelete) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete")
                         }

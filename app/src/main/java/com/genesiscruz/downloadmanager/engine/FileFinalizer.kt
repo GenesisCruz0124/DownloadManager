@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import com.genesiscruz.downloadmanager.data.db.DownloadEntity
+import com.genesiscruz.downloadmanager.util.MimeTypes
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,7 +39,7 @@ class FileFinalizer @Inject constructor(
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, download.fileName)
-            put(MediaStore.Downloads.MIME_TYPE, download.mimeType ?: "application/octet-stream")
+            put(MediaStore.Downloads.MIME_TYPE, MimeTypes.resolve(download.fileName, download.mimeType))
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
