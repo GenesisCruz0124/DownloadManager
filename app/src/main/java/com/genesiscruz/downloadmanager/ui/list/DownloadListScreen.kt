@@ -10,13 +10,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -44,6 +55,10 @@ import com.genesiscruz.downloadmanager.service.SystemDownload
 import com.genesiscruz.downloadmanager.util.FileOpener
 import com.genesiscruz.downloadmanager.util.Formatters
 import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 
@@ -182,39 +197,111 @@ private fun FolderFileList(
         EmptyState("No files found in the device's Downloads folder.")
         return
     }
-    val dateFormat = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+    // Files arrive newest-first, so groupBy naturally yields date sections in
+    // the same order: Today, Yesterday, then older dates descending.
+    val groups = remember(files) { files.groupBy { dateBucketLabel(it.dateModifiedMillis) } }
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        items(files, key = { it.key }) { file ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
+        groups.forEach { (label, filesInGroup) ->
+            item(key = "header_$label") {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(label, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        file.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "${Formatters.bytes(file.sizeBytes)} · " +
-                            dateFormat.format(Date(file.dateModifiedMillis)),
+                        "${filesInGroup.size} item${if (filesInGroup.size == 1) "" else "s"}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                IconButton(onClick = { onOpen(file) }) {
-                    Icon(Icons.Filled.OpenInNew, contentDescription = "Open")
-                }
-                IconButton(onClick = { onDelete(file) }) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete")
+            }
+            item(key = "group_$label") {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column {
+                        filesInGroup.forEachIndexed { index, file ->
+                            FolderFileRow(
+                                file = file,
+                                timeLabel = timeFormat.format(Date(file.dateModifiedMillis)),
+                                onOpen = { onOpen(file) },
+                                onDelete = { onDelete(file) }
+                            )
+                            if (index != filesInGroup.lastIndex) {
+                                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun FolderFileRow(
+    file: FolderFile,
+    timeLabel: String,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            iconFor(file.name),
+            contentDescription = null,
+            modifier = Modifier.padding(end = 12.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                file.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "${Formatters.bytes(file.sizeBytes)} · $timeLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onOpen) {
+            Icon(Icons.Filled.OpenInNew, contentDescription = "Open")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+        }
+    }
+}
+
+private fun dateBucketLabel(epochMillis: Long): String {
+    val date = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+    val today = LocalDate.now()
+    return when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }
+}
+
+private fun iconFor(fileName: String): ImageVector = when (fileName.substringAfterLast('.', "").lowercase()) {
+    "apk" -> Icons.Filled.Android
+    "jpg", "jpeg", "png", "gif", "webp", "bmp" -> Icons.Filled.Image
+    "mp4", "mkv", "avi", "mov", "webm" -> Icons.Filled.VideoFile
+    "pdf" -> Icons.Filled.PictureAsPdf
+    "doc", "docx", "txt" -> Icons.Filled.Description
+    else -> Icons.Filled.InsertDriveFile
 }
 
 @Composable
