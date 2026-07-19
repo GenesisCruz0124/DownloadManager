@@ -1,5 +1,8 @@
 package com.genesiscruz.downloadmanager.ui.list
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,18 +15,24 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoFile
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -31,12 +40,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.genesiscruz.downloadmanager.data.db.DownloadStatus
+import com.genesiscruz.downloadmanager.service.BrowserEntry
 import com.genesiscruz.downloadmanager.service.FolderFile
 import com.genesiscruz.downloadmanager.service.SystemDownload
 import com.genesiscruz.downloadmanager.util.FileOpener
@@ -73,8 +85,15 @@ fun DownloadListScreen(
     viewModel: DownloadListViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val browserState by viewModel.browserState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var tab by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) { viewModel.restoreBrowsingIfAny() }
+
+    val pickFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri -> uri?.let(viewModel::onFolderPicked) }
 
     Scaffold(
         topBar = {
@@ -105,11 +124,36 @@ fun DownloadListScreen(
             }
             when (tab) {
                 3 -> SystemDownloadList(state.systemDownloads)
-                4 -> FolderFileList(
-                    files = state.folderFiles,
-                    onOpen = { FileOpener.open(context, it.uri, it.mimeType, it.name) },
-                    onDelete = { viewModel.deleteFolderFile(it) }
-                )
+                4 -> if (browserState.isActive) {
+                    FolderBrowserView(
+                        state = browserState,
+                        onUp = { viewModel.navigateUp() },
+                        onBackToDownloads = { viewModel.closeBrowser() },
+                        onPickDifferentFolder = { pickFolderLauncher.launch(null) },
+                        onEntryClick = { entry ->
+                            if (entry.isDirectory) {
+                                viewModel.navigateInto(entry)
+                            } else {
+                                FileOpener.open(context, entry.uri, entry.mimeType, entry.name)
+                            }
+                        },
+                        onDelete = { viewModel.deleteBrowserEntry(it) }
+                    )
+                } else {
+                    Column(Modifier.fillMaxSize()) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp, 8.dp)) {
+                            OutlinedButton(onClick = { pickFolderLauncher.launch(null) }) {
+                                Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                                Text(" Browse other folder", modifier = Modifier.padding(start = 4.dp))
+                            }
+                        }
+                        FolderFileList(
+                            files = state.folderFiles,
+                            onOpen = { FileOpener.open(context, it.uri, it.mimeType, it.name) },
+                            onDelete = { viewModel.deleteFolderFile(it) }
+                        )
+                    }
+                }
                 else -> {
                     val downloads = when (tab) {
                         1 -> state.downloads.filter {
@@ -182,6 +226,102 @@ private fun SystemDownloadList(downloads: List<SystemDownload>) {
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderBrowserView(
+    state: BrowserUiState,
+    onUp: () -> Boolean,
+    onBackToDownloads: () -> Unit,
+    onPickDifferentFolder: () -> Unit,
+    onEntryClick: (BrowserEntry) -> Unit,
+    onDelete: (BrowserEntry) -> Unit
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp, 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (state.canGoUp) {
+                IconButton(onClick = { onUp() }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Up")
+                }
+            }
+            Text(
+                state.breadcrumb,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            )
+            IconButton(onClick = onPickDifferentFolder) {
+                Icon(Icons.Filled.CreateNewFolder, contentDescription = "Pick a different folder")
+            }
+        }
+        Row(Modifier.padding(horizontal = 16.dp)) {
+            Button(onClick = onBackToDownloads) { Text("Back to Downloads") }
+        }
+        when {
+            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            state.entries.isEmpty() -> EmptyState("This folder is empty.")
+            else -> LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(state.entries, key = { it.documentId }) { entry ->
+                    BrowserEntryRow(
+                        entry = entry,
+                        onClick = { onEntryClick(entry) },
+                        onDelete = { onDelete(entry) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowserEntryRow(
+    entry: BrowserEntry,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (entry.isDirectory) Icons.Filled.Folder else iconFor(entry.name),
+            contentDescription = null,
+            modifier = Modifier.padding(end = 12.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!entry.isDirectory) {
+                Text(
+                    Formatters.bytes(entry.sizeBytes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (!entry.isDirectory) {
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete")
             }
         }
     }
