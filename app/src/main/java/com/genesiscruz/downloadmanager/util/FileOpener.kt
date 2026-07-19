@@ -34,7 +34,12 @@ object FileOpener {
     fun open(context: Context, download: DownloadEntity): Boolean {
         val finalUri = download.finalUri ?: return false
         val uri = resolveUri(context, finalUri)
-        val mimeType = MimeTypes.resolve(download.fileName, download.mimeType)
+        return open(context, uri, download.mimeType, download.fileName)
+    }
+
+    /** @return true if an activity was launched to handle the file. */
+    fun open(context: Context, uri: Uri, reportedMimeType: String?, fileName: String): Boolean {
+        val mimeType = MimeTypes.resolve(fileName, reportedMimeType)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

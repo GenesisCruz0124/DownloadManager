@@ -7,6 +7,8 @@ import com.genesiscruz.downloadmanager.data.db.DownloadStatus
 import com.genesiscruz.downloadmanager.data.repo.DownloadRepository
 import com.genesiscruz.downloadmanager.engine.DownloadEngine
 import com.genesiscruz.downloadmanager.engine.LiveProgress
+import com.genesiscruz.downloadmanager.service.DownloadsFolderObserver
+import com.genesiscruz.downloadmanager.service.FolderFile
 import com.genesiscruz.downloadmanager.service.SystemDownload
 import com.genesiscruz.downloadmanager.service.SystemDownloadObserver
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,22 +22,25 @@ import javax.inject.Inject
 data class DownloadListUiState(
     val downloads: List<DownloadEntity> = emptyList(),
     val liveProgress: Map<Long, LiveProgress> = emptyMap(),
-    val systemDownloads: List<SystemDownload> = emptyList()
+    val systemDownloads: List<SystemDownload> = emptyList(),
+    val folderFiles: List<FolderFile> = emptyList()
 )
 
 @HiltViewModel
 class DownloadListViewModel @Inject constructor(
     repo: DownloadRepository,
     private val engine: DownloadEngine,
-    systemObserver: SystemDownloadObserver
+    systemObserver: SystemDownloadObserver,
+    private val folderObserver: DownloadsFolderObserver
 ) : ViewModel() {
 
     val uiState: StateFlow<DownloadListUiState> = combine(
         repo.observeAll(),
         engine.liveProgress,
-        systemObserver.downloads
-    ) { downloads, live, system ->
-        DownloadListUiState(downloads, live, system)
+        systemObserver.downloads,
+        folderObserver.files
+    ) { downloads, live, system, folder ->
+        DownloadListUiState(downloads, live, system, folder)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadListUiState())
 
     fun pause(id: Long) = viewModelScope.launch { engine.pause(id) }
@@ -48,5 +53,9 @@ class DownloadListViewModel @Inject constructor(
 
     fun delete(download: DownloadEntity) = viewModelScope.launch {
         engine.delete(download.id, deleteFile = download.status != DownloadStatus.COMPLETED)
+    }
+
+    fun deleteFolderFile(file: FolderFile) = viewModelScope.launch {
+        folderObserver.delete(file)
     }
 }
